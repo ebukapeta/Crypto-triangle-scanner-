@@ -5,7 +5,9 @@ mod utils;
 mod exchanges;
 
 use routes::create_router;
-use std::net::SocketAddr;
+use tokio::net::TcpListener;
+use axum::serve;
+use std::env;
 use tracing_subscriber;
 
 #[tokio::main]
@@ -14,12 +16,12 @@ async fn main() {
 
     let app = create_router();
 
-    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
-let addr = SocketAddr::from(([0, 0, 0, 0], port.parse::<u16>().unwrap()));
+    // Use Render-provided port or default to 8080 locally
+    let port = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let addr = format!("0.0.0.0:{}", port);
+
+    let listener = TcpListener::bind(&addr).await.unwrap();
     tracing::info!("Server running at http://{}", addr);
 
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    serve(listener, app).await.unwrap();
 }
