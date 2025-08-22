@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Triangular Arbitrage Scanner</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <h1>Triangular Arbitrage Scanner</h1>
+  <label>Exchange:
+    <select id="exchange">
+      <option value="binance">Binance</option>
+      <option value="bybit">Bybit</option>
+      <option value="kucoin">KuCoin</option>
+      <option value="gateio">Gate.io</option>
+      <option value="kraken">Kraken</option>
+    </select>
+  </label>
+  <label>Min Profit %:
+    <input id="profit" type="number" value="0.5" step="0.1">
+  </label>
+  <button onclick="startScan()">Start Scan</button>
+
+  <table id="results">
+    <thead>
+      <tr><th>Path</th><th>Profit %</th><th>Time</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script src="/script.js"></script>
+</body>
+</html>
