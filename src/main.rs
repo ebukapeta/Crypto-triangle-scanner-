@@ -14,7 +14,8 @@ async fn main() {
 
     let app = create_router();
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+let addr = SocketAddr::from(([0, 0, 0, 0], port.parse::<u16>().unwrap()));
     tracing::info!("Server running at http://{}", addr);
 
     axum::Server::bind(&addr)
