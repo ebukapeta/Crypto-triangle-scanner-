@@ -1,27 +1,21 @@
-mod config;
-mod scanner;
 mod routes;
 mod utils;
 mod exchanges;
 
+use axum::{Router, Server};
+use std::net::SocketAddr;
+use tower_http::services::ServeDir;
 use routes::create_router;
-use tokio::net::TcpListener;
-use axum::serve;
-use std::env;
-use tracing_subscriber;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    let app = create_router().nest_service("/static", ServeDir::new("static"));
 
-    let app = create_router();
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    println!("Server running at http://{}", addr);
 
-    // Use Render-provided port or default to 8080 locally
-    let port = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
-    let addr = format!("0.0.0.0:{}", port);
-
-    let listener = TcpListener::bind(&addr).await.unwrap();
-    tracing::info!("Server running at http://{}", addr);
-
-    serve(listener, app).await.unwrap();
-}
+    Server::bind(&addr)
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
+               }
