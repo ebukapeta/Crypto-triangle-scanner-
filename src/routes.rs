@@ -1,54 +1,28 @@
-use axum::{
-    extract::Query,
-    response::Html,
-    routing::get,
-    Json, Router,
-};
-use serde::Serialize;
-
-use crate::config::ScanParams;
-use crate::scanner::find_triangles;
-use crate::exchanges::*;
-use crate::utils::percent_string;
+use axum::{routing::get, Router};
+use axum::response::Html;
+use tower_http::services::ServeDir;
 
 pub fn create_router() -> Router {
     Router::new()
         .route("/", get(index))
-        .route("/opportunities", get(opps_handler))
-        .route("/style.css", get(|| async { axum::response::Css("".to_string()) }))
-        .route("/script.js", get(|| async { axum::response::Html("".to_string()) }))
-        .fallback(get(index))
+        // Serve static files (like CSS, JS, images) from /static
+        .nest_service("/static", ServeDir::new("static"))
 }
 
 async fn index() -> Html<&'static str> {
-    include_str!("../static/index.html").into()
-}
-
-#[derive(Serialize)]
-struct OpportunityResponse {
-    path: Vec<String>,
-    profit_pct: f64,
-}
-
-async fn opps_handler(Query(params): Query<ScanParams>) -> Json<Vec<OpportunityResponse>> {
-    let pairs = match params.exchange.as_str() {
-        "binance" => binance::fetch_prices().await.unwrap_or_default(),
-        "bybit" => bybit::fetch_prices().await.unwrap_or_default(),
-        "kucoin" => kucoin::fetch_prices().await.unwrap_or_default(),
-        "gateio" => gateio::fetch_prices().await.unwrap_or_default(),
-        "kraken" => kraken::fetch_prices().await.unwrap_or_default(),
-        _ => Vec::new(),
-    };
-
-    let opps = find_triangles(&pairs, params.min_profit / 100.0);
-
-    Json(
-        opps
-            .into_iter()
-            .map(|o| OpportunityResponse {
-                path: o.path,
-                profit_pct: o.profit * 100.0,
-            })
-            .collect(),
-    )
-}
+    Html(r#"
+        <!DOCTYPE html>
+        <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Crypto Arbitrage Scanner</title>
+                <link rel="stylesheet" href="/static/style.css">
+            </head>
+            <body>
+                <h1>Crypto Arbitrage Scanner</h1>
+                <p>Welcome! The scanner is running and will update as new data is fetched.</p>
+            </body>
+        </html>
+    "#)
+    }
