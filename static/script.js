@@ -1,45 +1,52 @@
-const exchanges = ["binance", "bybit", "kucoin", "gateio", "kraken"];
+const tableWrap = document.getElementById('table-wrap');
+const statusEl = document.getElementById('status');
 
-async function fetchData(exchange) {
-  const response = await fetch(`/${exchange}/triangular`);
-  return response.json();
+function buildTable(rows) {
+  const table = document.createElement('table');
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Triangle Pair</th>
+        <th>Profit % (Before Fees)</th>
+        <th>Trade Fees (%)</th>
+        <th>Profit % (After Fees)</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tbody = table.querySelector('tbody');
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.triangle}</td>
+      <td>${r.profit_before_fees.toFixed(2)}%</td>
+      <td>${r.trade_fees.toFixed(2)}%</td>
+      <td>${r.profit_after_fees.toFixed(2)}%</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  return table;
 }
 
-async function renderTables() {
-  const container = document.getElementById("tables");
-  container.innerHTML = "";
+async function scan(exchange) {
+  const minProfit = Number(document.getElementById('minProfit').value || 0.3);
+  const feePerc   = Number(document.getElementById('feePerc').value || 0.1);
 
-  for (const exchange of exchanges) {
-    const data = await fetchData(exchange);
+  statusEl.textContent = `Scanning ${exchange}…`;
+  tableWrap.innerHTML = '';
 
-    const table = document.createElement("table");
-    const caption = document.createElement("caption");
-    caption.textContent = `${exchange.toUpperCase()} Opportunities`;
-    table.appendChild(caption);
-
-    table.innerHTML += `
-      <tr>
-        <th>Triangle Path</th>
-        <th>Profit % Before Fees</th>
-        <th>Trade Fees (%)</th>
-        <th>Profit % After Fees</th>
-      </tr>
-    `;
-
-    data.forEach(item => {
-      table.innerHTML += `
-        <tr>
-          <td>${item.triangle}</td>
-          <td>${item.profit_before_fees.toFixed(2)}%</td>
-          <td>${item.trade_fees.toFixed(2)}%</td>
-          <td>${item.profit_after_fees.toFixed(2)}%</td>
-        </tr>
-      `;
-    });
-
-    container.appendChild(table);
+  try {
+    const url = `/${exchange}/triangular?min_profit=${minProfit}&fee_perc=${feePerc}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    statusEl.textContent = `Found ${data.length} opportunities on ${exchange}.`;
+    tableWrap.appendChild(buildTable(data));
+  } catch (e) {
+    statusEl.textContent = `Error: ${e.message}`;
   }
 }
 
-setInterval(renderTables, 5000); // Refresh every 5 seconds
-renderTables();
+document.querySelectorAll('button[data-ex]').forEach(btn => {
+  btn.addEventListener('click', () => scan(btn.getAttribute('data-ex')));
+});
