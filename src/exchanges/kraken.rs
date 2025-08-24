@@ -1,29 +1,36 @@
-use reqwest;
+use reqwest::Error;
 use serde_json::Value;
+use crate::models::PairPrice;
+use crate::utils::normalize_asset;
 
-/// Fetch spot ticker info from Kraken
-/// API: GET https://api.kraken.com/0/public/Ticker
-/// 3
-pub async fn fetch_prices() -> Result<Vec<(String, String, f64)>, reqwest::Error> {
-    let mut out = Vec::new();
+/// Kraken’s `/0/public/Ticker` without pair param returns all tickers.
+/// We must map result keys (pair codes) into base/quote.
+/// Kraken uses many legacy codes; we normalize common ones.
+pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
     let url = "https://api.kraken.com/0/public/Ticker";
-    let resp = reqwest::get(url).await?;
-    let obj = resp.json::<Value>().await?;
+    let v: Value = reqwest::get(url).await?.json().await?;
+    let mut out = Vec::new();
 
-    if let Some(result) = obj["result"].as_object() {
-        for (pair, val) in result {
-            if let Some(arr) = val["c"].as_array() {
-                if let Some(pstr) = arr.get(0).and_then(|v| v.as_str()) {
-                    if let Ok(price) = pstr.parse::<f64>() {
-                        // Replace Kraken pair codes, e.g. XBT->BTC
-                        let sym = pair.replace("XBT", "BTC");
-                        // Split: naive assumption last 3-4 chars is quote
-                        let (base, quote) = if sym.len() > 4 {
-                            (&sym[..sym.len() - 4], &sym[sym.len() - 4..])
-                        } else {
-                            (&sym, "")
-                        };
-                        out.push((base.to_string(), quote.to_string(), price));
+    if let Some(obj) = v["result"].as_object() {
+        for (pair_code, val) in obj {
+            // Price is "c"[0]
+            if let Some(last) = val["c"].as_array().and_then(|a| a.get(0)).and_then(|x| x.as_str()) {
+                if let Ok(price) = last.parse::<f64>() {
+                    // Try to split the key into base/quote by heuristic:
+                    // Many Kraken keys look like "XXBTZUSD", "XETHXXBT" etc.
+                    let s = pair_code.to_string();
+                    // Try cut last 3/4 for quote
+                    let (base_raw, quote_raw) = if s.len() > 4 {
+                        (&s[..s.len()-4], &s[s.len()-4..])
+                    } else if s.len() > 3 {
+                        (&s[..s.len()-3], &s[s.len()-3..])
+                    } else {
+                        (s.as_str(), "")
+                    };
+                    let base = normalize_asset(base_raw);
+                    let quote = normalize_asset(quote_raw);
+                    if !base.is_empty() && !quote.is_empty() {
+                        out.push(PairPrice { base, quote, price });
                     }
                 }
             }
@@ -31,4 +38,4 @@ pub async fn fetch_prices() -> Result<Vec<(String, String, f64)>, reqwest::Error
     }
 
     Ok(out)
-                    }
+                }
