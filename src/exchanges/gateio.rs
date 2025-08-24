@@ -1,25 +1,26 @@
-use reqwest;
+use reqwest::Error;
 use serde_json::Value;
+use crate::models::PairPrice;
 
-/// Fetch latest spot tickers from Gate.io
-/// API: GET https://api.gateio.ws/api/v4/spot/tickers
-/// 2
-pub async fn fetch_prices() -> Result<Vec<(String, String, f64)>, reqwest::Error> {
+pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
+    let url = "https://api.gateio.ws/api/v4/spot/tickers";
+    let arr: Value = reqwest::get(url).await?.json().await?;
     let mut out = Vec::new();
 
-    let resp = reqwest::get("https://api.gateio.ws/api/v4/spot/tickers").await?;
-    let arr = resp.json::<Value>().await?.as_array().cloned().unwrap_or_default();
-
-    for item in arr {
-        if let (Some(sym), Some(pstr)) = (item["currency_pair"].as_str(), item["last"].as_str()) {
-            let s = sym.replace('_', "");
-            if let Ok(price) = pstr.parse::<f64>() {
-                let (base, quote) = if s.len() > 4 {
-                    (&s[..s.len() - 4], &s[s.len() - 4..])
-                } else {
-                    (&s, "")
-                };
-                out.push((base.to_string(), quote.to_string(), price));
+    if let Some(list) = arr.as_array() {
+        for item in list {
+            if let (Some(sym), Some(pstr)) = (item["currency_pair"].as_str(), item["last"].as_str()) {
+                if let Ok(price) = pstr.parse::<f64>() {
+                    // Gate uses "BASE_QUOTE"
+                    let parts: Vec<&str> = sym.split('_').collect();
+                    if parts.len() == 2 {
+                        out.push(PairPrice {
+                            base: parts[0].to_string(),
+                            quote: parts[1].to_string(),
+                            price,
+                        });
+                    }
+                }
             }
         }
     }
