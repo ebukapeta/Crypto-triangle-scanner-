@@ -29,8 +29,13 @@ async fn main() {
         .layer(Extension(shared_state));
 
     // bind to Render PORT or default 8080
-    let port = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
-    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse().expect("invalid addr");
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+let addr = format!("0.0.0.0:{}", port);
+println!("Server running on {}", addr);
+axum::Server::bind(&addr.parse().unwrap())
+    .serve(app.into_make_service())
+    .await
+    .unwrap();
 
     let listener = TcpListener::bind(addr).await.expect("bind failed");
     println!("Listening on {}", port);
