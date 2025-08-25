@@ -1,64 +1,28 @@
-use axum::{Router, routing::get, extract::Query, response::Json};
-use serde::Deserialize;
-use crate::models::TriangularResult;
-use crate::scanner;
-
-#[derive(Deserialize)]
-pub struct ScanParams {
-    pub min_profit: Option<f64>,
-    pub fee_perc: Option<f64>,
-}
+use axum::{routing::get, Json, Router};
+use serde_json::json;
+use crate::scanner::Scanner;
+use tracing::info;
 
 pub fn create_router() -> Router {
     Router::new()
-        .route("/", get(root))
-        .route("/binance/triangular", get(binance_handler))
-        .route("/bybit/triangular", get(bybit_handler))
-        .route("/kucoin/triangular", get(kucoin_handler))
-        .route("/gateio/triangular", get(gateio_handler))
-        .route("/kraken/triangular", get(kraken_handler))
+        .route("/scan/:exchange", get(scan_exchange))
 }
 
-async fn root() -> &'static str {
-    "Triangular Arbitrage Scanner running. Use the UI or /<exchange>/triangular"
-}
+/// Handles GET /scan/:exchange
+async fn scan_exchange(axum::extract::Path(exchange): axum::extract::Path<String>) -> Json<serde_json::Value> {
+    info!("Received scan request for {exchange}");
+    let scanner = Scanner::new();
 
-async fn binance_handler(Query(params): Query<ScanParams>) -> Json<Vec<TriangularResult>> {
-    let min_profit = params.min_profit.unwrap_or(0.3);
-    let fee = params.fee_perc.unwrap_or(0.1);
-    let prices = match crate::exchanges::binance::fetch_prices().await { Ok(v)=>v, Err(_)=>Vec::new() };
-    let res = scanner::scan_triangles(prices, min_profit, fee);
-    Json(res)
-}
-
-async fn bybit_handler(Query(params): Query<ScanParams>) -> Json<Vec<TriangularResult>> {
-    let min_profit = params.min_profit.unwrap_or(0.3);
-    let fee = params.fee_perc.unwrap_or(0.1);
-    let prices = match crate::exchanges::bybit::fetch_prices().await { Ok(v)=>v, Err(_)=>Vec::new() };
-    let res = scanner::scan_triangles(prices, min_profit, fee);
-    Json(res)
-}
-
-async fn kucoin_handler(Query(params): Query<ScanParams>) -> Json<Vec<TriangularResult>> {
-    let min_profit = params.min_profit.unwrap_or(0.3);
-    let fee = params.fee_perc.unwrap_or(0.1);
-    let prices = match crate::exchanges::kucoin::fetch_prices().await { Ok(v)=>v, Err(_)=>Vec::new() };
-    let res = scanner::scan_triangles(prices, min_profit, fee);
-    Json(res)
-}
-
-async fn gateio_handler(Query(params): Query<ScanParams>) -> Json<Vec<TriangularResult>> {
-    let min_profit = params.min_profit.unwrap_or(0.3);
-    let fee = params.fee_perc.unwrap_or(0.1);
-    let prices = match crate::exchanges::gateio::fetch_prices().await { Ok(v)=>v, Err(_)=>Vec::new() };
-    let res = scanner::scan_triangles(prices, min_profit, fee);
-    Json(res)
-}
-
-async fn kraken_handler(Query(params): Query<ScanParams>) -> Json<Vec<TriangularResult>> {
-    let min_profit = params.min_profit.unwrap_or(0.3);
-    let fee = params.fee_perc.unwrap_or(0.1);
-    let prices = match crate::exchanges::kraken::fetch_prices().await { Ok(v)=>v, Err(_)=>Vec::new() };
-    let res = scanner::scan_triangles(prices, min_profit, fee);
-    Json(res)
+    match scanner.scan(&exchange).await {
+        Ok(results) => Json(json!({
+            "status": "success",
+            "exchange": exchange,
+            "results": results
+        })),
+        Err(err) => Json(json!({
+            "status": "error",
+            "exchange": exchange,
+            "message": err
+        })),
     }
+}
