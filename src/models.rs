@@ -1,16 +1,15 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TriangularResult {
-    pub triangle: String,
-    pub profit_before_fees: f64,
-    pub trade_fees: f64,
-    pub profit_after_fees: f64,
-}
+    // Legs (actual pairs used, with inversion noted when applicable)
+    pub leg1: String,
+    pub leg2: String,
+    pub leg3: String,
 
-#[derive(Clone, Debug)]
-pub struct PairPrice {
-    pub base: String,
-    pub quote: String,
-    pub price: f64, // quote per base
+    // Profit in percent (not fractions)
+    pub profit_before_fees: f64,
+    pub fee_perc_per_leg: f64,
+    pub total_fee_percent: f64,
+    pub profit_after_fees: f64,
 }
