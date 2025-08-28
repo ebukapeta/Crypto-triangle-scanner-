@@ -4,32 +4,43 @@ mod utils;
 mod models;
 mod routes;
 
-use axum::Router;
-use std::{env, net::SocketAddr};
+use axum::{Router, extract::Extension};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 use tower_http::services::ServeDir;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber;
+use axum::serve;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    // API routes (JSON)
+    // Shared app state
+    let shared_state = Arc::new(Mutex::new(()));
+
+    // API router
     let api = routes::create_router();
 
-    // App = API + Static UI
+    // Combine API and static routes
     let app = Router::new()
-        .merge(api) // /binance/triangular etc
-        .nest_service("/", ServeDir::new("static")) // serve / -> static/index.html
-        .layer(CorsLayer::permissive());
+        .nest("/api", api)
+        .nest_service("/", ServeDir::new("static"))
+        .layer(CorsLayer::permissive())
+        .layer(Extension(shared_state));
 
-    // Render binds via PORT env var
-    let port = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
-    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse().expect("invalid addr");
+    // Get port for Render or default 8080
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let addr: SocketAddr = format!("0.0.0.0:{}", port)
+        .parse()
+        .expect("Invalid address");
 
-    let listener = TcpListener::bind(addr).await.expect("bind failed");
-    println!("Listening on {}", port);
+    println!("Server running on {}", addr);
 
-    axum::serve(listener, app).await.unwrap();
+    // Bind listener and serve app
+    let listener = TcpListener::bind(addr)
+        .await
+        .expect("Failed to bind address");
+    serve(listener, app).await.unwrap();
 }
