@@ -67,7 +67,8 @@ pub fn scan_triangles(pairs: Vec<PairPrice>, min_profit_pct: f64, fee_per_leg_pc
         }
     }
 
+    // dedupe + sort
     results.sort_by(|a,b| b.profit_after_fees.partial_cmp(&a.profit_after_fees).unwrap());
     results.dedup_by(|x,y| x.triangle == y.triangle);
     results
-                            }
+    }
