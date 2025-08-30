@@ -19,4 +19,4 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
         }
     }
     Ok(out)
-                                        }
+}
