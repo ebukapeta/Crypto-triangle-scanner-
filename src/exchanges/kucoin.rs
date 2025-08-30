@@ -10,11 +10,12 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
 
     if let Some(tickers) = resp["data"]["ticker"].as_array() {
         for item in tickers {
-            if let (Some(sym), Some(pstr)) =
-                (item.get("symbol").and_then(|v| v.as_str()), item.get("last").and_then(|v| v.as_str()))
-            {
-                if let Ok(price) = pstr.parse::<f64>() {
-                    let pair = sym.replace("-", "");
+            let sym = item.get("symbol").and_then(|v| v.as_str());
+            let pstr = item.get("last").and_then(|v| v.as_str());
+            if let (Some(s), Some(ps)) = (sym, pstr) {
+                if let Ok(price) = ps.parse::<f64>() {
+                    // KuCoin symbols like "BTC-USDT"
+                    let pair = s.replace('-', "");
                     if let Some((base, quote)) = split_concat_symbol(&pair) {
                         out.push(PairPrice { base, quote, price });
                     }
@@ -22,6 +23,5 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
             }
         }
     }
-
     Ok(out)
-                        }
+}
