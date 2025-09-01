@@ -1,11 +1,11 @@
 use crate::models::PairPrice;
-use crate::utils::{split_concat_symbol, normalize_kraken_asset};
+use crate::utils::{normalize_kraken_asset, split_concat_symbol};
 use reqwest::Error;
 use serde_json::Value;
 
-/// Simplified: query a set of popular alt names to avoid the heavy AssetPairs+chunking dance.
+/// Kraken: we query a set of commonly used pairs to keep it simple and avoid heavy chunking.
+/// You can extend this list for additional pairs if needed.
 pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
-    // Add more as needed
     let pairs = [
         "XBTUSD","ETHUSD","ADAUSD","DOTUSD","SOLUSD","XRPUSD","DOGEUSD",
         "XBTUSDT","ETHUSDT","ADAUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","DOTUSDT",
@@ -13,21 +13,21 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
     ].join(",");
 
     let url = format!("https://api.kraken.com/0/public/Ticker?pair={}", pairs);
-    let resp: Value = reqwest::get(&url).await?.json().await?;
+    let v: Value = reqwest::get(&url).await?.json().await?;
     let mut out = Vec::new();
 
-    if let Some(obj) = resp.get("result").and_then(|r| r.as_object()) {
-        for (k, v) in obj {
+    if let Some(obj) = v.get("result").and_then(|r| r.as_object()) {
+        for (k, info) in obj {
             // Kraken returns last trade price at c[0]
-            if let Some(pstr) = v.get("c").and_then(|c| c.get(0)).and_then(|x| x.as_str()) {
-                if let Ok(price) = pstr.parse::<f64>() {
-                    // Try altname split approach: normalize assets then split
-                    // First, try direct split on key (often like "XBTUSD" or "XXBTZUSD")
-                    let cleaned = k.replace(".", "");
-                    if let Some((base, quote)) = split_concat_symbol(&cleaned) {
-                        let b = normalize_kraken_asset(&base);
-                        let q = normalize_kraken_asset(&quote);
-                        out.push(PairPrice { base: b, quote: q, price });
+            if let Some(last) = info.get("c").and_then(|c| c.get(0)).and_then(|x| x.as_str()) {
+                if let Ok(price) = last.parse::<f64>() {
+                    // try to split the returned key (cleaned)
+                    let key = k.replace(".", "");
+                    // try to use the split logic (some keys map well)
+                    if let Some((base_raw, quote_raw)) = split_concat_symbol(&key) {
+                        let base = normalize_kraken_asset(&base_raw);
+                        let quote = normalize_kraken_asset(&quote_raw);
+                        out.push(PairPrice { base, quote, price });
                         continue;
                     }
                 }
@@ -35,4 +35,4 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
         }
     }
     Ok(out)
-                    }
+}
