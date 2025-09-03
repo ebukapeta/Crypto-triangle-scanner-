@@ -4,30 +4,36 @@ use reqwest::Error;
 use serde_json::Value;
 
 pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
-    let url = "https://api.kraken.com/0/public/AssetPairs";
-    let raw: Value = reqwest::get(url).await?.json().await?;
-    let mut out = vec![];
+    // Step 1: fetch tradable asset pairs
+    let meta_url = "https://api.kraken.com/0/public/AssetPairs";
+    let meta_resp: Value = reqwest::get(meta_url).await?.json().await?;
+    let mut valid = std::collections::HashMap::new();
 
-    if let Some(result) = raw.get("result").and_then(|r| r.as_object()) {
-        for (k, v) in result {
-            if let (Some(ws), Some(c0)) = (
-                v.get("wsname").and_then(|x| x.as_str()),
-                v.get("base").and_then(|b| b.as_str()),
-            ) {
-                if let Some(last) = v.get("c")
-                    .and_then(|c| c.get(0))
-                    .and_then(|x| x.as_str())
-                {
-                    if let Ok(price) = last.parse::<f64>() {
-                        let parts = ws.split('/').collect::<Vec<&str>>();
-                        if parts.len() == 2 {
-                            out.push(PairPrice {
-                                base: normalize_kraken_asset(parts[0]),
-                                quote: normalize_kraken_asset(parts[1]),
-                                price,
-                                is_spot: true,
-                            });
-                        }
+    if let Some(obj) = meta_resp["result"].as_object() {
+        for (key, val) in obj {
+            if val["status"] == "online" && val["quote"].is_string() && val["base"].is_string() {
+                let base = normalize_kraken_asset(val["base"].as_str().unwrap_or(""));
+                let quote = normalize_kraken_asset(val["quote"].as_str().unwrap_or(""));
+                valid.insert(key.to_string(), (base, quote));
+            }
+        }
+    }
+
+    // Step 2: fetch ticker prices
+    let tick_url = "https://api.kraken.com/0/public/Ticker?pair=";
+    let tick_resp: Value = reqwest::get(tick_url).await?.json().await?;
+    let mut out = Vec::new();
+
+    if let Some(obj) = tick_resp["result"].as_object() {
+        for (sym, val) in obj {
+            if let Some((base, quote)) = valid.get(sym) {
+                if let Some(price_str) = val["c"][0].as_str() {
+                    if let Ok(price) = price_str.parse::<f64>() {
+                        out.push(PairPrice {
+                            base: base.clone(),
+                            quote: quote.clone(),
+                            price,
+                        });
                     }
                 }
             }
@@ -35,4 +41,4 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
     }
 
     Ok(out)
-            }
+}
