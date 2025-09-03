@@ -1,27 +1,38 @@
 use crate::models::PairPrice;
+use crate::utils::split_concat_symbol;
 use reqwest::Error;
 use serde_json::Value;
 
 pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
-    let url = "https://api.kucoin.com/api/v1/market/allTickers";
-    let raw: Value = reqwest::get(url).await?.json().await?;
-    let mut out = vec![];
+    // Step 1: fetch tradable spot symbols
+    let meta_url = "https://api.kucoin.com/api/v2/symbols";
+    let meta_resp: Value = reqwest::get(meta_url).await?.json().await?;
+    let mut valid = std::collections::HashSet::new();
 
-    if let Some(tickers) = raw.get("data").and_then(|d| d.get("ticker")).and_then(|t| t.as_array()) {
-        for item in tickers {
-            if let (Some(sym), Some(pstr)) = (
-                item.get("symbol").and_then(|v| v.as_str()),
-                item.get("last").and_then(|v| v.as_str()),
-            ) {
+    if let Some(arr) = meta_resp["data"].as_array() {
+        for sym in arr {
+            if sym["enableTrading"].as_bool() == Some(true) {
+                if let Some(symbol) = sym["symbol"].as_str() {
+                    valid.insert(symbol.to_string());
+                }
+            }
+        }
+    }
+
+    // Step 2: fetch ticker prices
+    let tick_url = "https://api.kucoin.com/api/v1/market/allTickers";
+    let tick_resp: Value = reqwest::get(tick_url).await?.json().await?;
+    let mut out = Vec::new();
+
+    if let Some(arr) = tick_resp["data"]["ticker"].as_array() {
+        for item in arr {
+            if let (Some(sym), Some(pstr)) =
+                (item["symbol"].as_str(), item["last"].as_str())
+            {
+                if !valid.contains(sym) { continue; }
                 if let Ok(price) = pstr.parse::<f64>() {
-                    let base_quote = sym.split('-').collect::<Vec<&str>>();
-                    if base_quote.len() == 2 {
-                        out.push(PairPrice {
-                            base: base_quote[0].to_string(),
-                            quote: base_quote[1].to_string(),
-                            price,
-                            is_spot: true,
-                        });
+                    if let Some((base, quote)) = split_concat_symbol(sym) {
+                        out.push(PairPrice { base, quote, price });
                     }
                 }
             }
@@ -29,4 +40,4 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
     }
 
     Ok(out)
-                            }
+                    }
