@@ -1,22 +1,30 @@
 use crate::models::PairPrice;
-use crate::utils::split_concat_symbol;
 use reqwest::Error;
 use serde_json::Value;
 
 pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
-    let url = "https://api.bybit.com/v5/market/tickers?category=spot";
-    let v: Value = reqwest::get(url).await?.json().await?;
+    let url = "https://api.bybit.com/spot/v3/public/quote/ticker/price";
+    let data: Value = reqwest::get(url).await?.json().await?;
     let mut out = Vec::new();
-    if let Some(list) = v.get("result").and_then(|r| r.get("list")).and_then(|l| l.as_array()) {
-        for item in list {
-            if let (Some(sym), Some(pstr)) = (item.get("symbol").and_then(|s| s.as_str()), item.get("lastPrice").and_then(|s| s.as_str())) {
+
+    if let Some(prices) = data.get("result").and_then(|v| v.as_array()) {
+        for item in prices {
+            if let (Some(base), Some(quote), Some(pstr)) = (
+                item.get("baseCoin").and_then(|v| v.as_str()),
+                item.get("quoteCoin").and_then(|v| v.as_str()),
+                item.get("price").and_then(|v| v.as_str()),
+            ) {
                 if let Ok(price) = pstr.parse::<f64>() {
-                    if let Some((base, quote)) = split_concat_symbol(sym) {
-                        out.push(PairPrice { base, quote, price });
-                    }
+                    out.push(PairPrice {
+                        base: base.to_uppercase(),
+                        quote: quote.to_uppercase(),
+                        price,
+                        is_spot: true,
+                    });
                 }
             }
         }
     }
+
     Ok(out)
-}
+                }
