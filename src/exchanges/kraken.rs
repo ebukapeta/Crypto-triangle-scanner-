@@ -4,7 +4,6 @@ use reqwest::Error;
 use serde_json::Value;
 
 pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
-    // Step 1: fetch tradable asset pairs
     let meta_url = "https://api.kraken.com/0/public/AssetPairs";
     let meta_resp: Value = reqwest::get(meta_url).await?.json().await?;
     let mut valid = std::collections::HashMap::new();
@@ -19,7 +18,6 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
         }
     }
 
-    // Step 2: fetch ticker prices
     let tick_url = "https://api.kraken.com/0/public/Ticker?pair=";
     let tick_resp: Value = reqwest::get(tick_url).await?.json().await?;
     let mut out = Vec::new();
@@ -33,6 +31,7 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
                             base: base.clone(),
                             quote: quote.clone(),
                             price,
+                            is_spot: true,
                         });
                     }
                 }
