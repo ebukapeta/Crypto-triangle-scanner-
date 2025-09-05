@@ -20,11 +20,27 @@ pub fn split_concat_symbol(sym: &str) -> Option<(String, String)> {
     None
 }
 
-/// Kraken cleanup: remove leading X/Z and map XBT -> BTC
+/// Normalize Kraken asset codes into standard tickers
 pub fn normalize_kraken_asset(asset: &str) -> String {
-    let mut s = asset.trim().trim_start_matches(|c| c == 'X' || c == 'Z').to_uppercase();
-    if s == "XBT" { s = "BTC".to_string(); }
-    s
+    match asset {
+        "XXBT" | "XBT" => "BTC".to_string(),
+        "XETH" | "ETH" => "ETH".to_string(),
+        "XLTC" | "LTC" => "LTC".to_string(),
+        "XDG"  | "DOGE" => "DOGE".to_string(),
+        "USDT" => "USDT".to_string(),
+        "USDC" => "USDC".to_string(),
+        "DAI"  => "DAI".to_string(),
+        "ZEUR" | "EUR" => "EUR".to_string(),
+        "ZUSD" | "USD" => "USD".to_string(),
+        "ZGBP" | "GBP" => "GBP".to_string(),
+        "ZJPY" | "JPY" => "JPY".to_string(),
+        "ZCAD" | "CAD" => "CAD".to_string(),
+        "ZCHF" | "CHF" => "CHF".to_string(),
+        // fallback: strip leading X/Z if present
+        _ => asset.trim_start_matches('X')
+                  .trim_start_matches('Z')
+                  .to_string(),
+    }
 }
 
 #[inline]
