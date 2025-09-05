@@ -12,7 +12,7 @@ fn normalize_symbol(s: &str) -> String {
         "ZGBP" | "GBP" => "GBP".to_string(),
         "ZJPY" | "JPY" => "JPY".to_string(),
         "XETH" | "ETH" => "ETH".to_string(),
-        "XLTC" | "LTC".to_string(),
+        "XLTC" | "LTC" => "LTC".to_string(),
         "XXRP" | "XRP" => "XRP".to_string(),
         "USDT" => "USDT".to_string(),
         "USDC" => "USDC".to_string(),
@@ -28,6 +28,21 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
 
     if let Some(result) = resp_pairs.get("result").and_then(|r| r.as_object()) {
         for (pair_code, details) in result {
+            // skip dark pool markets
+            if pair_code.ends_with(".d") {
+                continue;
+            }
+
+            // skip margin-only or derivative pairs
+            let has_leverage = details.get("leverage_buy")
+                .and_then(|v| v.as_array())
+                .map(|arr| !arr.is_empty())
+                .unwrap_or(false);
+
+            if has_leverage {
+                continue;
+            }
+
             if let (Some(base), Some(quote)) = (
                 details.get("base").and_then(|v| v.as_str()),
                 details.get("quote").and_then(|v| v.as_str()),
@@ -71,4 +86,4 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
 
     println!("Kraken: loaded {} spot pairs", out.len());
     Ok(out)
-}
+            }
