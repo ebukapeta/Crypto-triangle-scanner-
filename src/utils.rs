@@ -20,12 +20,29 @@ pub fn split_concat_symbol(sym: &str) -> Option<(String, String)> {
     None
 }
 
-/// Kraken cleanup: remove leading X/Z and map XBT -> BTC
+/// Kraken cleanup: remove leading X/Z and map weird codes to standard ones
 pub fn normalize_kraken_asset(asset: &str) -> String {
-    let mut s = asset.trim().trim_start_matches(|c| c == 'X' || c == 'Z').to_uppercase();
-    if s == "XBT" { s = "BTC".to_string(); }
-    s
-}
+    let mut s = asset.trim().to_uppercase();
+
+    // strip common prefixes Kraken uses
+    if s.starts_with('X') || s.starts_with('Z') {
+        s = s.trim_start_matches(|c| c == 'X' || c == 'Z').to_string();
+    }
+
+    // special mappings
+    match s.as_str() {
+        "XBT" => "BTC".to_string(),
+        "XDG" => "DOGE".to_string(),
+        "XETH" => "ETH".to_string(),
+        "XXMR" => "XMR".to_string(),
+        "XXRP" => "XRP".to_string(),
+        "XLTC" => "LTC".to_string(),
+        "XBNB" => "BNB".to_string(),
+        "XADA" => "ADA".to_string(),
+        "XDOT" => "DOT".to_string(),
+        _ => s, // if no mapping needed, keep as-is
+    }
+                              }
 
 #[inline]
 pub fn round2(v: f64) -> f64 { (v * 100.0).round() / 100.0 }
