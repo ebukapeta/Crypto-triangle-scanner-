@@ -1,44 +1,56 @@
 use crate::models::PairPrice;
+use crate::utils::normalize_kraken_asset;
 use reqwest::Error;
 use serde_json::Value;
 use std::collections::HashMap;
 
 pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
-    // Step 1: Get all asset pairs
+    // Step 1: Fetch all asset pairs
     let url = "https://api.kraken.com/0/public/AssetPairs";
     let resp: Value = reqwest::get(url).await?.json().await?;
 
-    // Safely extract result as a map
-    let pairs_map = resp["result"].as_object();
-    let mut out = Vec::new();
+    let mut pair_map: HashMap<String, (String, String)> = HashMap::new();
+    let mut valid_pairs: Vec<String> = Vec::new();
 
-    if let Some(map) = pairs_map {
+    if let Some(map) = resp["result"].as_object() {
         for (pair_name, info) in map {
-            // Only include spot, online, tradeable pairs
             let status = info.get("status").and_then(|v| v.as_str()).unwrap_or("");
-            let spot = info.get("spot").and_then(|v| v.as_str()).unwrap_or("true"); // default true
             let base = info.get("base").and_then(|v| v.as_str()).unwrap_or("");
             let quote = info.get("quote").and_then(|v| v.as_str()).unwrap_or("");
 
-            if status != "online" || spot != "true" {
-                continue; // skip non-spot or offline
+            // Only include spot, online pairs
+            if status == "online" {
+                let base_norm = normalize_kraken_asset(base);
+                let quote_norm = normalize_kraken_asset(quote);
+                pair_map.insert(pair_name.clone(), (base_norm, quote_norm));
+                valid_pairs.push(pair_name.clone());
             }
+        }
+    }
 
-            // Step 2: Fetch ticker for this pair
-            let ticker_url = format!("https://api.kraken.com/0/public/Ticker?pair={}", pair_name);
-            let ticker_resp: Value = reqwest::get(&ticker_url).await?.json().await?;
+    if valid_pairs.is_empty() {
+        return Ok(vec![]);
+    }
 
-            if let Some(ticker_obj) = ticker_resp["result"].as_object() {
-                if let Some(first_entry) = ticker_obj.values().next() {
-                    if let Some(price_str) = first_entry["c"][0].as_str() {
-                        if let Ok(price) = price_str.parse::<f64>() {
-                            out.push(PairPrice {
-                                base: base.to_string(),
-                                quote: quote.to_string(),
-                                price,
-                                is_spot: true,
-                            });
-                        }
+    // Step 2: Fetch all tickers in one request
+    let ticker_url = format!(
+        "https://api.kraken.com/0/public/Ticker?pair={}",
+        valid_pairs.join(",")
+    );
+    let ticker_resp: Value = reqwest::get(&ticker_url).await?.json().await?;
+
+    let mut out = Vec::new();
+    if let Some(ticker_obj) = ticker_resp["result"].as_object() {
+        for (pair_name, ticker_data) in ticker_obj {
+            if let Some((base, quote)) = pair_map.get(pair_name) {
+                if let Some(price_str) = ticker_data["c"][0].as_str() {
+                    if let Ok(price) = price_str.parse::<f64>() {
+                        out.push(PairPrice {
+                            base: base.clone(),
+                            quote: quote.clone(),
+                            price,
+                            is_spot: true,
+                        });
                     }
                 }
             }
@@ -46,4 +58,4 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
     }
 
     Ok(out)
-                }
+                    }
