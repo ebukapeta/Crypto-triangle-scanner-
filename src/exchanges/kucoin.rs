@@ -1,36 +1,27 @@
 use crate::models::PairPrice;
-use crate::utils::split_concat_symbol;
 use reqwest::Error;
 use serde_json::Value;
 
 pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
-    let meta_url = "https://api.kucoin.com/api/v2/symbols";
-    let meta_resp: Value = reqwest::get(meta_url).await?.json().await?;
-    let mut valid = std::collections::HashSet::new();
-
-    if let Some(arr) = meta_resp["data"].as_array() {
-        for sym in arr {
-            if sym["enableTrading"].as_bool() == Some(true) {
-                if let Some(symbol) = sym["symbol"].as_str() {
-                    valid.insert(symbol.to_string());
-                }
-            }
-        }
-    }
-
-    let tick_url = "https://api.kucoin.com/api/v1/market/allTickers";
-    let tick_resp: Value = reqwest::get(tick_url).await?.json().await?;
+    let url = "https://api.kucoin.com/api/v1/market/allTickers";
+    let resp: Value = reqwest::get(url).await?.json().await?;
     let mut out = Vec::new();
 
-    if let Some(arr) = tick_resp["data"]["ticker"].as_array() {
-        for item in arr {
-            if let (Some(sym), Some(pstr)) =
-                (item["symbol"].as_str(), item["last"].as_str())
-            {
-                if !valid.contains(sym) { continue; }
-                if let Ok(price) = pstr.parse::<f64>() {
-                    if let Some((base, quote)) = split_concat_symbol(sym) {
-                        out.push(PairPrice { base, quote, price, is_spot: true });
+    if let Some(tickers) = resp.get("data").and_then(|d| d.get("ticker")).and_then(|t| t.as_array()) {
+        for t in tickers {
+            if let (Some(symbol), Some(last_str)) = (t.get("symbol").and_then(|v| v.as_str()), t.get("last").and_then(|v| v.as_str())) {
+                if let Ok(price) = last_str.parse::<f64>() {
+                    // KuCoin symbols are like "BTC-USDT"
+                    let parts: Vec<&str> = symbol.split('-').collect();
+                    if parts.len() == 2 {
+                        let base = parts[0].to_string();
+                        let quote = parts[1].to_string();
+                        out.push(PairPrice {
+                            base,
+                            quote,
+                            price,
+                            is_spot: true,
+                        });
                     }
                 }
             }
@@ -38,4 +29,4 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
     }
 
     Ok(out)
-        }
+            }
