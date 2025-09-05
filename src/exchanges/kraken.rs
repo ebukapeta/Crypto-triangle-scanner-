@@ -7,20 +7,21 @@ use std::collections::HashMap;
 fn normalize_symbol(s: &str) -> String {
     match s {
         "XBT" => "BTC".to_string(),
-        "ETH" | "XETH" => "ETH".to_string(),
-        "XXRP" | "XRP" => "XRP".to_string(),
+        "ZUSD" | "USD" => "USD".to_string(),
+        "ZEUR" | "EUR" => "EUR".to_string(),
+        "ZGBP" | "GBP" => "GBP".to_string(),
+        "ZJPY" | "JPY" => "JPY".to_string(),
+        "XETH" | "ETH" => "ETH".to_string(),
         "XLTC" | "LTC" => "LTC".to_string(),
-        "XBNB" | "BNB" => "BNB".to_string(),
+        "XXRP" | "XRP" => "XRP".to_string(),
         "USDT" => "USDT".to_string(),
         "USDC" => "USDC".to_string(),
-        "EUR" => "EUR".to_string(),
-        "USD" | "ZUSD" => "USD".to_string(),
-        _ => s.trim_start_matches('X').trim_start_matches('Z').to_string(),
+        other => other.trim_start_matches('X').trim_start_matches('Z').to_string(),
     }
 }
 
 pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
-    // Step 1: Get asset pair mappings
+    // Step 1: Fetch asset pair metadata
     let url_pairs = "https://api.kraken.com/0/public/AssetPairs";
     let resp_pairs: Value = reqwest::get(url_pairs).await?.json().await?;
     let mut pair_map = HashMap::new();
@@ -39,9 +40,14 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
         }
     }
 
-    // Step 2: Get ticker prices
-    let url_ticker = "https://api.kraken.com/0/public/Ticker?pair=all";
-    let resp_ticker: Value = reqwest::get(url_ticker).await?.json().await?;
+    // Step 2: Build ticker query string (comma-separated list of pair codes)
+    let pair_list: Vec<String> = pair_map.keys().cloned().collect();
+    let url_ticker = format!(
+        "https://api.kraken.com/0/public/Ticker?pair={}",
+        pair_list.join(",")
+    );
+
+    let resp_ticker: Value = reqwest::get(&url_ticker).await?.json().await?;
     let mut out = Vec::new();
 
     if let Some(result) = resp_ticker.get("result").and_then(|r| r.as_object()) {
@@ -61,5 +67,8 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
         }
     }
 
+    // Debug: check how many pairs we actually loaded
+    println!("Kraken: loaded {} spot pairs", out.len());
+
     Ok(out)
-        }
+}
