@@ -2,52 +2,60 @@ use crate::models::PairPrice;
 use crate::utils::normalize_kraken_asset;
 use reqwest::Error;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
-    // Step 1: Fetch all asset pairs
-    let url = "https://api.kraken.com/0/public/AssetPairs";
-    let resp: Value = reqwest::get(url).await?.json().await?;
+    // Step 1: get all tradable spot pairs
+    let pairs_url = "https://api.kraken.com/0/public/AssetPairs";
+    let pairs_resp: Value = reqwest::get(pairs_url).await?.json().await?;
+    let mut spot_pairs: HashSet<String> = HashSet::new();
 
-    let mut pair_map: HashMap<String, (String, String)> = HashMap::new();
-    let mut valid_pairs: Vec<String> = Vec::new();
+    if let Some(result) = pairs_resp.get("result").and_then(|r| r.as_object()) {
+        for (pair_name, info) in result {
+            // "spot" is indicated by "wsname" and "aclass_base"/"aclass_quote" == "currency"
+            if let (Some(base), Some(quote)) =
+                (info.get("base").and_then(|v| v.as_str()), info.get("quote").and_then(|v| v.as_str()))
+            {
+                // only spot if asset classes are currencies
+                let aclass_base = info.get("aclass_base").and_then(|v| v.as_str());
+                let aclass_quote = info.get("aclass_quote").and_then(|v| v.as_str());
 
-    if let Some(map) = resp["result"].as_object() {
-        for (pair_name, info) in map {
-            let status = info.get("status").and_then(|v| v.as_str()).unwrap_or("");
-            let base = info.get("base").and_then(|v| v.as_str()).unwrap_or("");
-            let quote = info.get("quote").and_then(|v| v.as_str()).unwrap_or("");
-
-            // Only include spot, online pairs
-            if status == "online" {
-                let base_norm = normalize_kraken_asset(base);
-                let quote_norm = normalize_kraken_asset(quote);
-                pair_map.insert(pair_name.clone(), (base_norm, quote_norm));
-                valid_pairs.push(pair_name.clone());
+                if aclass_base == Some("currency") && aclass_quote == Some("currency") {
+                    spot_pairs.insert(pair_name.to_string());
+                }
             }
         }
     }
 
-    if valid_pairs.is_empty() {
-        return Ok(vec![]);
-    }
-
-    // Step 2: Fetch all tickers in one request
-    let ticker_url = format!(
-        "https://api.kraken.com/0/public/Ticker?pair={}",
-        valid_pairs.join(",")
-    );
-    let ticker_resp: Value = reqwest::get(&ticker_url).await?.json().await?;
+    // Step 2: get ticker prices for ALL pairs
+    let url = "https://api.kraken.com/0/public/Ticker?pair=ALL";
+    let resp: Value = reqwest::get(url).await?.json().await?;
 
     let mut out = Vec::new();
-    if let Some(ticker_obj) = ticker_resp["result"].as_object() {
-        for (pair_name, ticker_data) in ticker_obj {
-            if let Some((base, quote)) = pair_map.get(pair_name) {
-                if let Some(price_str) = ticker_data["c"][0].as_str() {
-                    if let Ok(price) = price_str.parse::<f64>() {
+
+    if let Some(result) = resp.get("result").and_then(|r| r.as_object()) {
+        for (pair_name, data) in result {
+            // only keep if Kraken says it's a spot pair
+            if !spot_pairs.contains(pair_name) {
+                continue;
+            }
+
+            if let Some(price_str) = data
+                .get("c")
+                .and_then(|c| c.get(0))
+                .and_then(|v| v.as_str())
+            {
+                if let Ok(price) = price_str.parse::<f64>() {
+                    // normalize both base and quote
+                    let base_raw = result[pair_name]["base"].as_str().unwrap_or("");
+                    let quote_raw = result[pair_name]["quote"].as_str().unwrap_or("");
+                    let base = normalize_kraken_asset(base_raw);
+                    let quote = normalize_kraken_asset(quote_raw);
+
+                    if !base.is_empty() && !quote.is_empty() && base != quote && price.is_finite() && price > 0.0 {
                         out.push(PairPrice {
-                            base: base.clone(),
-                            quote: quote.clone(),
+                            base,
+                            quote,
                             price,
                             is_spot: true,
                         });
@@ -58,4 +66,4 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
     }
 
     Ok(out)
-                    }
+                        }
