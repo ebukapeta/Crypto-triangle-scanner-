@@ -1,79 +1,37 @@
 use crate::models::PairPrice;
+use crate::utils::normalize_kraken_asset;
 use reqwest::Error;
 use serde_json::Value;
-use std::collections::HashMap;
-
-/// Normalize Kraken asset codes to standard symbols
-fn normalize_symbol(s: &str) -> String {
-    match s {
-        "XBT" => "BTC".to_string(),
-        "ZUSD" | "USD" => "USD".to_string(),
-        "ZEUR" | "EUR" => "EUR".to_string(),
-        "ZGBP" | "GBP" => "GBP".to_string(),
-        "ZJPY" | "JPY" => "JPY".to_string(),
-        "XETH" | "ETH" => "ETH".to_string(),
-        "XLTC" | "LTC" => "LTC".to_string(),
-        "XXRP" | "XRP" => "XRP".to_string(),
-        "USDT" => "USDT".to_string(),
-        "USDC" => "USDC".to_string(),
-        other => other.trim_start_matches('X').trim_start_matches('Z').to_string(),
-    }
-}
 
 pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
-    // Step 1: Fetch asset pair metadata
-    let url_pairs = "https://api.kraken.com/0/public/AssetPairs";
-    let resp_pairs: Value = reqwest::get(url_pairs).await?.json().await?;
-    let mut pair_map = HashMap::new();
+    let url = "https://api.kraken.com/0/public/Ticker?pair=all";
+    let resp: Value = reqwest::get(url).await?.json().await?;
 
-    if let Some(result) = resp_pairs.get("result").and_then(|r| r.as_object()) {
-        for (pair_code, details) in result {
-            // skip dark pool markets
-            if pair_code.ends_with(".d") {
-                continue;
-            }
-
-            // skip margin-only or derivative pairs
-            let has_leverage = details.get("leverage_buy")
-                .and_then(|v| v.as_array())
-                .map(|arr| !arr.is_empty())
-                .unwrap_or(false);
-
-            if has_leverage {
-                continue;
-            }
-
-            if let (Some(base), Some(quote)) = (
-                details.get("base").and_then(|v| v.as_str()),
-                details.get("quote").and_then(|v| v.as_str()),
-            ) {
-                pair_map.insert(
-                    pair_code.clone(),
-                    (normalize_symbol(base), normalize_symbol(quote)),
-                );
-            }
-        }
-    }
-
-    let pair_list: Vec<String> = pair_map.keys().cloned().collect();
     let mut out = Vec::new();
 
-    // Step 2: Request tickers in batches of 50
-    for chunk in pair_list.chunks(50) {
-        let url_ticker = format!(
-            "https://api.kraken.com/0/public/Ticker?pair={}",
-            chunk.join(",")
-        );
-        let resp_ticker: Value = reqwest::get(&url_ticker).await?.json().await?;
+    if let Some(result) = resp.get("result").and_then(|r| r.as_object()) {
+        for (pair, data) in result {
+            // Skip synthetic/futures pairs
+            if pair.contains(".d") || pair.contains(".m") || pair.contains("FUTURE") {
+                continue;
+            }
 
-        if let Some(result) = resp_ticker.get("result").and_then(|r| r.as_object()) {
-            for (pair_code, data) in result {
-                if let Some((base, quote)) = pair_map.get(pair_code) {
-                    if let Some(c) = data.get("c").and_then(|c| c.get(0)).and_then(|v| v.as_str()) {
-                        if let Ok(price) = c.parse::<f64>() {
+            // Kraken Ticker response -> "c" = last trade [<price>, <lot size>]
+            if let Some(price_str) = data.get("c")
+                .and_then(|v| v.get(0))
+                .and_then(|v| v.as_str()) 
+            {
+                if let Ok(price) = price_str.parse::<f64>() {
+                    // Kraken gives wsname like "ETH/USD" for spot markets
+                    if let Some(wsname) = data.get("wsname").and_then(|v| v.as_str()) {
+                        let parts: Vec<&str> = wsname.split('/').collect();
+                        if parts.len() == 2 {
+                            let base = normalize_kraken_asset(parts[0]);
+                            let quote = normalize_kraken_asset(parts[1]);
+                            // Push only real spot pairs
                             out.push(PairPrice {
-                                base: base.clone(),
-                                quote: quote.clone(),
+                                base,
+                                quote,
                                 price,
                                 is_spot: true,
                             });
@@ -84,6 +42,5 @@ pub async fn fetch_prices() -> Result<Vec<PairPrice>, Error> {
         }
     }
 
-    println!("Kraken: loaded {} spot pairs", out.len());
     Ok(out)
-            }
+                        }
